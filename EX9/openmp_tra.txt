@@ -1,0 +1,31 @@
+#include <stdio.h>
+#include <omp.h>
+
+// Function to integrate
+double f(double x) {
+    return x * x;   // Example: f(x) = x^2
+}
+
+int main() {
+    int n = 1000000;     // number of trapezoids
+    double a = 0.0, b = 1.0;
+    double h = (b - a) / n;
+    double sum = 0.0;
+
+    double start = omp_get_wtime();
+
+    #pragma omp parallel for reduction(+:sum)
+    for (int i = 1; i < n; i++) {
+        double x = a + i * h;
+        sum += f(x);
+    }
+
+    double result = h * ((f(a) + f(b)) / 2.0 + sum);
+
+    double end = omp_get_wtime();
+
+    printf("Integral = %f\n", result);
+    printf("Time taken = %f seconds\n", end - start);
+
+    return 0;
+}
