@@ -1,0 +1,116 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+
+#define BUFFER_SIZE 10
+#define RESULT_SIZE 50
+#define MAX_WORD_LEN 50
+#define NUM_THREADS 3
+#define NUM_WORDS 8
+
+// Shared buffers
+char buffer[BUFFER_SIZE][MAX_WORD_LEN];
+char result_buffer[RESULT_SIZE][100];
+
+int in = 0, out = 0, count = 0;
+int result_count = 0;
+int finished = 0;
+
+// Dictionary
+char *dictionary[] = {"apple", "banana", "orange", "grape", "mango"};
+int dict_size = 5;
+
+// Synchronization
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t not_empty = PTHREAD_COND_INITIALIZER;
+pthread_cond_t not_full = PTHREAD_COND_INITIALIZER;
+
+// Spell check function
+int check_dictionary(char *word) {
+    for (int i = 0; i < dict_size; i++) {
+        if (strcmp(dictionary[i], word) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+// Worker thread
+void* spell_check(void* arg) {
+    while (1) {
+        pthread_mutex_lock(&mutex);
+
+        while (count == 0 && !finished)
+            pthread_cond_wait(&not_empty, &mutex);
+
+        if (count == 0 && finished) {
+            pthread_mutex_unlock(&mutex);
+            break;
+        }
+
+        char word[MAX_WORD_LEN];
+        strcpy(word, buffer[out]);
+        out = (out + 1) % BUFFER_SIZE;
+        count--;
+
+        pthread_cond_signal(&not_full);
+        pthread_mutex_unlock(&mutex);
+
+        // Check spelling
+        int correct = check_dictionary(word);
+
+        pthread_mutex_lock(&mutex);
+
+        if (correct)
+            sprintf(result_buffer[result_count++], "%s -> Correct", word);
+        else
+            sprintf(result_buffer[result_count++], "%s -> Incorrect", word);
+
+        pthread_mutex_unlock(&mutex);
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t threads[NUM_THREADS];
+
+    char *words[NUM_WORDS] = {
+        "apple", "pear", "banana", "grapefruit",
+        "mango", "orange", "kiwi", "grape"
+    };
+
+    // Create worker threads
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_create(&threads[i], NULL, spell_check, NULL);
+
+    // Producer (Master thread)
+    for (int i = 0; i < NUM_WORDS; i++) {
+        pthread_mutex_lock(&mutex);
+
+        while (count == BUFFER_SIZE)
+            pthread_cond_wait(&not_full, &mutex);
+
+        strcpy(buffer[in], words[i]);
+        in = (in + 1) % BUFFER_SIZE;
+        count++;
+
+        pthread_cond_signal(&not_empty);
+        pthread_mutex_unlock(&mutex);
+    }
+
+    pthread_mutex_lock(&mutex);
+    finished = 1;
+    pthread_cond_broadcast(&not_empty);
+    pthread_mutex_unlock(&mutex);
+
+    // Join threads
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_join(threads[i], NULL);
+
+    // Print results
+    printf("\nSpell Check Results:\n");
+    for (int i = 0; i < result_count; i++)
+        printf("%s\n", result_buffer[i]);
+
+    return 0;
+}
