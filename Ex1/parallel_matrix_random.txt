@@ -1,0 +1,75 @@
+// parallel_matrix_random.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
+#include <time.h>
+
+int main() {
+    int m, n, p;
+
+    printf("Enter m n p (e.g., 500 500 500): ");
+    scanf("%d %d %d", &m, &n, &p);
+
+    // Allocate matrices
+    int **A = (int **)malloc(m * sizeof(int *));
+    int **B = (int **)malloc(n * sizeof(int *));
+    for (int i = 0; i < m; i++) A[i] = (int *)malloc(n * sizeof(int));
+    for (int i = 0; i < n; i++) B[i] = (int *)malloc(p * sizeof(int));
+
+    // Shared memory for result matrix
+    int shmid = shmget(IPC_PRIVATE, sizeof(int) * m * p, IPC_CREAT | 0666);
+    int *C = (int *)shmat(shmid, NULL, 0);
+
+    // Random initialization
+    srand(time(NULL));
+    for (int i = 0; i < m; i++)
+        for (int j = 0; j < n; j++)
+            A[i][j] = rand() % 10;
+
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < p; j++)
+            B[i][j] = rand() % 10;
+
+    clock_t start = clock();
+
+    // Create m child processes
+    for (int i = 0; i < m; i++) {
+        pid_t pid = fork();
+
+        if (pid == 0) {
+            // Compute one row
+            for (int j = 0; j < p; j++) {
+                C[i * p + j] = 0;
+                for (int k = 0; k < n; k++) {
+                    C[i * p + j] += A[i][k] * B[k][j];
+                }
+            }
+            exit(0);
+        }
+    }
+
+    // Parent waits
+    for (int i = 0; i < m; i++)
+        wait(NULL);
+
+    clock_t end = clock();
+
+    printf("\nParallel Execution Time: %f seconds\n",
+           (double)(end - start) / CLOCKS_PER_SEC);
+
+    // Cleanup
+    shmdt(C);
+    shmctl(shmid, IPC_RMID, NULL);
+
+    for (int i = 0; i < m; i++) free(A[i]);
+    for (int i = 0; i < n; i++) free(B[i]);
+    free(A);
+    free(B);
+
+    return 0;
+}
+
+modify this program such that the time is calculated in micro seconds for each process and print the maximum time 
+
